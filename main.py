@@ -104,7 +104,7 @@ def count_main_cities(PIL_image=None):
     return length
 
 
-def getMask(color, cv2_image, range=80):
+def get_mask(color, cv2_image, range=80):
     """
     Converts a BGR image into black and white mask with white color representing specified color.
     :param color: this color will become white on the mask
@@ -137,8 +137,8 @@ def find_battles():
     # Getting masks
     cv2_image_1 = convert_PILToCV2(PIL_image_1)
     cv2_image_2 = convert_PILToCV2(PIL_image_2)
-    mask_1 = getMask(YELLOW_BGR, cv2_image_1)
-    mask_2 = getMask(YELLOW_BGR, cv2_image_2)
+    mask_1 = get_mask(YELLOW_BGR, cv2_image_1)
+    mask_2 = get_mask(YELLOW_BGR, cv2_image_2)
     # Merging masks to compensate glowing
     mask = cv2.add(mask_1, mask_2)
     #cv2_image = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
@@ -213,7 +213,7 @@ def toggle_AT_panel(action=None):
         pyautogui.click(1698, 173)
         print 'Closing AT panel...'
 
-def getIndex(y):
+def get_index(y):
     """
     Returns an index of Assault Team based on vertical coordinate.
     :param y: y coordinate of left upper corner of AT's template
@@ -246,7 +246,7 @@ def get_AT_list(cv2_gray=None, debug=False):
         threshold = 0.9
         loc = np.where(res >= threshold)
         for pt in zip(*loc[::-1]):
-            i = getIndex(pt[1])
+            i = get_index(pt[1])
             assault_teams[i] = [name, [0, 0, 0], [maxsoldiers, maxvehicles, maxmorale]]
             if debug:
                 cv2.rectangle(cv2_gray, pt, (pt[0] + w, pt[1] + h), 255, 2)
