@@ -8,17 +8,27 @@ import time
 import pyautogui
 pyautogui.FAILSAFE = True
 
+import AT
+
 FIRST_STAR = (541, 135)
 STAR_STEP = 37
+
+BLACK = (0, 0, 0)
+GREEN = (46, 129, 37)
 BLUE = (53, 88, 204)
 RED = (175, 43, 30)
 YELLOW_BGR = (97, 255, 255)
+
 SCREEN_RESOLUTION = None
 SCROLLING_STEP = 2000
 SCROLLING_SLEEP = 0.25
 
-MORALE_TEMPLATE = cv2.imread('templates/morale.png',0)
+QUEUE_TEMPLATE = cv2.imread('templates/Queue.png',0)
+DEPLOY_TEMPLATE = cv2.imread('templates/Deploy.png',0)
+RETREAT_TEMPLATE = cv2.imread('templates/Retreat.png',0)
+MORALE_TEMPLATE = cv2.imread('templates/Morale.png',0)
 AT_TEMPLATES = [
+    # template, name, [maxSoldiers, maxVehicles, maxMorale]
     [cv2.imread('templates/light_armor.png', 0), 'Light_Armor', [20, 16, 100]],
     [cv2.imread('templates/motorized_guard.png', 0), 'Motorized_Guard', [36, 12, 100]],
     [cv2.imread('templates/motorized_recon.png', 0), 'Motorized_Recon', [24, 24, 100]],
@@ -29,10 +39,14 @@ MAXIMUM_ATs_ON_PANEL = 20 # how many AT's can fit in sidebar, make it bigger tha
 AT_VERTICAL_STEP = 106 # vertical step between AT's in sidebar
 AT_VERTICAL_SPACING = 150 # the list of ATs starts at this height
 
+def die():
+    print 'Make sure you\'re running H&G in 1920x1080 window, your tab is set to GLOBAL & your color scheme is RED-BLUE.'
+    exit()
+
 def make_screenshot(saveDirectory=None):
     """
     Makes a screenshot, returns a PIL image, saves the file in given path if saveDirectory was specified
-    :param saveDirectory: if specified, must have an entailing /, like 'screenshots/'
+    :param saveDirectory: if specified, must end with '/', like 'screenshots/'
     :return: returns a PIL image
     """
     global SCREEN_RESOLUTION
@@ -76,6 +90,9 @@ def move_to_city(cityNumber):
     x, y = FIRST_STAR
     pyautogui.click(x + STAR_STEP * cityNumber, y)
     pyautogui.moveTo(SCREEN_RESOLUTION[0] / 2, SCREEN_RESOLUTION[1] / 2)
+    time.sleep(0.5)
+    scroll(-1, 2, SCROLLING_SLEEP)  # to compensate zooming out
+    time.sleep(0.5)
 
 def convert_CV2ToPIL(cv2_image, conversionType=cv2.COLOR_BGR2RGB):
     return Image.fromarray(cv2.cvtColor(cv2_image, conversionType))
@@ -163,8 +180,6 @@ def find_frontline_city(countOfControlledCities=None):
         countOfControlledCities = count_main_cities()
     for k in xrange(countOfControlledCities):
         move_to_city(k)
-        scroll(-1, 2, SCROLLING_SLEEP) # to compensate zooming out
-        time.sleep(2)
         cur_city_pos = (SCREEN_RESOLUTION[0] / 2, SCREEN_RESOLUTION[1] / 2)
         battles = find_battles()
         if battles is not None:
@@ -177,15 +192,16 @@ def find_frontline_city(countOfControlledCities=None):
                         city = (k, (x, y), distance(cur_city_pos, (x, y)))
     return city
 
-def is_AT_panel_opened(cv2_gray=None):
+def is_AT_panel_opened(PIL_image=None):
     """
     Searches for morale icon, then decides whether AT panel is opened or not based on its location.
-    :param cv2_gray: if provided, an image to search in. If None, a new screenshot will be made
+    :param PIL_image: if provided, an image to search in. If None, a new screenshot will be made
     :return: boolean
     """
-    if cv2_gray is None:
+    if PIL_image is None:
         PIL_image = make_screenshot()
-        cv2_gray = convert_PILToCV2(PIL_image, cv2.COLOR_RGB2GRAY)
+
+    cv2_gray = convert_PILToCV2(PIL_image, cv2.COLOR_RGB2GRAY)
 
     w, h = MORALE_TEMPLATE.shape[::-1]
     res = cv2.matchTemplate(cv2_gray, MORALE_TEMPLATE, cv2.TM_CCOEFF)
@@ -200,9 +216,9 @@ def is_AT_panel_opened(cv2_gray=None):
         return True
     return False
 
-def toggle_AT_panel(action=None):
+def toggle_AT_panel(PIL_image=None, action=None):
     if action is None:
-        if is_AT_panel_opened():
+        if is_AT_panel_opened(PIL_image):
             action = 'close'
         else:
             action = 'open'
@@ -213,91 +229,216 @@ def toggle_AT_panel(action=None):
         pyautogui.click(1698, 173)
         print 'Closing AT panel...'
 
-def get_index(y):
-    """
-    Returns an index of Assault Team based on vertical coordinate.
-    :param y: y coordinate of left upper corner of AT's template
-    :return: number in range [0, MAXIMUM_ATs_ON_PANEL], or -1 if y < AT_VERTICAL_SPACING
-    """
-    index = 0
-    while y > AT_VERTICAL_SPACING + index * AT_VERTICAL_STEP:
-        index += 1
-    return index - 1
+def template_on_image(cv2_gray, template, threshold, debug=False):
+    w, h = template.shape[::-1]
+    res = cv2.matchTemplate(cv2_gray, template, cv2.TM_CCOEFF_NORMED)
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+    if max_val > threshold:
+        return True
+    else:
+        return False
 
-def get_AT_list(cv2_gray=None, debug=False):
+def get_cropped(cv2_image, box):
+    """
+    :param cv2_image: cv2 image containing captcha
+    :param box: an array [top_left_point, bottom_right_point]
+    :return: cropped cv2 image
+    """
+    x1 = box[0][0]
+    x2 = box[1][0]
+    y1 = box[0][1]
+    y2 = box[1][1]
+    cv2_cropped = cv2_image[y1:y2, x1:x2]
+    return cv2_cropped
+
+def parse_team_status(PIL_image, top_left, maxStats):
+
+    maxSoldiers, maxVehicles, maxMorale = maxStats
+
+    vehicles_bar_pos = (top_left[0] + 95, top_left[1] + 19)
+    soldiers_bar_pos = (vehicles_bar_pos[0], vehicles_bar_pos[1] + 22)
+    morale_bar_pos = (vehicles_bar_pos[0] - 75, vehicles_bar_pos[1] - 28)
+    bar_width = 50
+
+    # Counting the length of the vehicles bar
+    length = count_bar_pixels(PIL_image, GREEN, vehicles_bar_pos)
+    vehicle_bar_status = length / float(bar_width) * maxVehicles
+
+    # Counting the length of the soldiers bar
+    length = count_bar_pixels(PIL_image, GREEN, soldiers_bar_pos)
+    soldiers_bar_status = length / float(bar_width) * maxSoldiers
+
+    # Counting the length of the morale bar
+    morale_bar_width = 42
+    length = count_bar_pixels(PIL_image, GREEN, morale_bar_pos)
+    morale_bar_status = length / float(morale_bar_width) * maxMorale
+
+    # Check if the AT is currently in queue
+    # Cropping AT sheet
+    bottom_right = (SCREEN_RESOLUTION[0], top_left[1] + 50)
+    cv2_gray = convert_PILToCV2(PIL_image, cv2.COLOR_RGB2GRAY)
+    cv2_gray = get_cropped(cv2_gray, box=(top_left, bottom_right))
+    inQueue = template_on_image(cv2_gray, QUEUE_TEMPLATE, 0.85, debug=False)
+    canBeDeployed = template_on_image(cv2_gray, DEPLOY_TEMPLATE, 0.85, debug=False)
+    isInBattle = template_on_image(cv2_gray, RETREAT_TEMPLATE, 0.85, debug=False)
+    #cv2_image = convert_PILToCV2(PIL_image)
+    #cv2.line(cv2_image, vehicles_bar_pos, soldiers_bar_pos, (0,0,255))
+    #cv2.imshow(name, cv2_image)
+    curStats = (soldiers_bar_status, vehicle_bar_status, morale_bar_status, inQueue, canBeDeployed, isInBattle)
+    print curStats
+    return curStats
+
+def get_teams(PIL_image, debug=False):
     """
     Analyzes sidebar panel and returns an array of all available teams.
     :param cv2_gray: if provided, searches in the image instead, otherwise makes a new screenshot
-    :return: an array of assault teams with [index, AT_name] elements
+    :param debug: boolean, if true, shows an image with highlighted ATs and their type
+    :return: an array of assault teams with [name, XY, [0, 0, 0], [maxsoldiers, maxvehicles, maxmorale]] elements
     """
-    if cv2_gray is None:
-        PIL_image = make_screenshot()
-        cv2_gray = convert_PILToCV2(PIL_image, cv2.COLOR_RGB2GRAY)
+    cv2_gray = convert_PILToCV2(PIL_image, cv2.COLOR_RGB2GRAY)
 
     # Preallocating memory for our Assault Teams
-    assault_teams = []
-    for i in xrange(MAXIMUM_ATs_ON_PANEL):
-        assault_teams.append(None)
+    teams = []
 
     for elem in AT_TEMPLATES:
-        template, name, [maxsoldiers, maxvehicles, maxmorale] = elem
+        template, name, maxStats = elem
+
         w, h = template.shape[::-1]
         res = cv2.matchTemplate(cv2_gray, template, cv2.TM_CCOEFF_NORMED)
         threshold = 0.9
         loc = np.where(res >= threshold)
         for pt in zip(*loc[::-1]):
-            i = get_index(pt[1])
-            assault_teams[i] = [name, [0, 0, 0], [maxsoldiers, maxvehicles, maxmorale]]
+            # First we need to check if there is any other team placed at these coordinates
+            # In order to do that, we calculate the minimum distance between pt and locations of teams we found before
+            mindist = 1000
+            for t in teams:
+                d = distance(pt, t.getPos())
+                if d < mindist: mindist = d
+                # multiple recognition of the same template in the small area usually fall on the next pixels, so 5px is enough to rule that out
+            if mindist < 5:
+                continue
+            # If pt is far enough from teams we've already counted, it must be an uncounted team
+            # Therefore we should add this team in the list of teams
+            status = parse_team_status(PIL_image, pt, maxStats)
+            team = AT.AssaultTeam(name, pt, maxStats)
+            team.setStatus(status)
+            teams.append(team)
             if debug:
                 cv2.rectangle(cv2_gray, pt, (pt[0] + w, pt[1] + h), 255, 2)
-                cv2.putText(cv2_gray, '%d:%s' % (i, name), (pt[0], pt[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, 255, 1)
+                cv2.putText(cv2_gray, '%s' % name, (pt[0], pt[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, 255, 1)
 
-    # Removing empty slots in our array of Assault Teams
-    assault_teams.sort()
-    for i in xrange(MAXIMUM_ATs_ON_PANEL):
-        team = assault_teams[MAXIMUM_ATs_ON_PANEL-i-1]
-        if team is None:
-            assault_teams.remove(team)
     if debug:
         cv2.imshow('AT sidebar analysis', cv2_gray)
-    return assault_teams
+
+    return teams
+
+def count_bar_pixels(PIL_image, color, point):
+    """
+    Counts the number of pixels that match given color in the bar at given coordinates.
+    :param PIL_image: image to count pixels on
+    :param point: array [x, y] of coordinates of the point to start counting at
+    :return: number of matching pixels
+    """
+    x, y = point
+    col = PIL_image.getpixel((x, y))
+    length = 0
+    while any(map(eq, col, color)):
+        length += 1
+        col = PIL_image.getpixel((x + length, y))
+    return length
+
+def manage_team(team):
+    """
+    Makes a dicision on what to do with given assault team: deploy, send to attack, send to retreat, nothing
+    :param team:
+    :return: nothing
+    """
+
+    if team.canBeDeployed():
+        # Deploy the team in the frontline city
+        print 'Deploying %s...' % team.getName()
+        # Findind city closest to the frontline
+        count = count_main_cities()
+        if count == 0:
+            print 'Failed to find main cities on the screen.'
+            die()
+        print 'At this moment our faction controls %d main cities...' % count
+        move_to_altitude()
+        city = find_frontline_city(count)
+        print 'City #%d has the closest battle (distance %d), deploying ATs in there...' % (city[0], city[2])
+
+        pyautogui.click(team.getIconPos())
+        # To be continued...
+
+        return
+
+    if team.needsRest() | team.needsReinforcements():
+        # Sending team to retreat
+        if team.needsRest():
+            print ' It needs rest.',
+        if team.needsReinforcements():
+            print ' It needs to be reinforced.',
+
+    if team.isReady():
+        # Sending team to the battlefield
+        print '%s still can fight alright, sending it to a battlefield...'
+        return
+
+
+
+
+
 
 def main():
+
     time.sleep(3)
 
-    count = count_main_cities()
-    if count == 0:
-        print 'Failed to find main cities on the screen.'
-        print 'Make sure you\'re running H&G in 1920x1080 window, your tab is set to GLOBAL & your color scheme is RED-BLUE.'
+    # Counting main cities
+    #count = count_main_cities()
+    #if count == 0:
+    #    print 'Failed to find main cities on the screen.'
+    #    die()
+    #print 'It looks like our faction controls %d main cities...' % count
+
+    while True:
+
+        screencap = make_screenshot()
+
+        # Open AT panel if it's closed
+        if not is_AT_panel_opened:
+            toggle_AT_panel(screencap, 'open')
+
+        teams = get_teams(screencap, debug=False)
+        if teams.__len__() == 0:
+            print 'No assault teams found, nothing to deploy.'
+            die()
+
+
+
+        # Managing ATs
+
+        cv2.waitKey(0)
         exit()
+    # Gathering information about available ATs
 
-    print 'It looks like our faction controls %d main cities...' % count
-
+    # Selecting a deploy point
+    #move_to_altitude()
     #city = find_frontline_city(count)
     #print 'City #%d has the closest battle (distance %d), deplying ATs in there...' % (city[0], city[2])
 
-    ATs = get_AT_list(debug=False)
-    if ATs.__len__() == 0:
-        print 'No assault teams found, nothing to deploy.'
-        exit()
-    print '%d assault teams found: ' % ATs.__len__(),
-    for team in ATs:
-        print '%s; ' % team[0],
-
-    # Open AT panel if it's closed
-    if not is_AT_panel_opened:
-        toggle_AT_panel('open')
-
-    # Reading\Updating status of Assault Teams
+    # obsolete
+    #print 'Creating an attack plan...'
+    #move_to_city(city[0])
+    #plan = make_screenshot()
+    #cv2_plan = convert_PILToCV2(plan)
+    #cur_city_pos = (SCREEN_RESOLUTION[0] / 2, SCREEN_RESOLUTION[1] / 2)
+    #cv2.rectangle(cv2_plan, cur_city_pos, cur_city_pos, (0,255,0), 10)
+    #cv2.putText(cv2_plan, 'City #%d sending ATs' % city[0], cur_city_pos, cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
+    #cv2.line(cv2_plan, cur_city_pos, city[1], (0, 0, 255), 4)
+    #cv2.imwrite(str(int(time.time())) + '.png', cv2_plan)
 
 
-    #
-    # move_to_altitude()
-    # PIL_image = make_screenshot()
-    # cv2_image = convert_PILToCV2(PIL_image)
 
-
-    cv2.waitKey(0)
 
 if __name__ == "__main__":
     main()
