@@ -9,35 +9,53 @@ import pyautogui
 pyautogui.FAILSAFE = True
 
 import AT
+import os
 
+BUY_BUTTON_POS = (1275, 600)
 FIRST_STAR = (541, 135)
 STAR_STEP = 37
 
+GRAY_BGR = (197, 213, 218)
 BLACK = (0, 0, 0)
 GREEN = (46, 129, 37)
 BLUE = (53, 88, 204)
+BLUE_BGR = (BLUE[2], BLUE[1], BLUE[0])
 RED = (175, 43, 30)
+RED_BGR = (RED[2], RED[1], RED[0])
 YELLOW_BGR = (97, 255, 255)
 
 SCREEN_RESOLUTION = None
+SCREEN_CENTER = None
 SCROLLING_STEP = 2000
 SCROLLING_SLEEP = 0.25
+
+MAXIMUM_ATs_ON_PANEL = 20 # how many AT's can fit in sidebar, make it bigger than the actual number
+AT_VERTICAL_STEP = 106 # vertical step between AT's in sidebar
+AT_VERTICAL_SPACING = 150 # the list of ATs starts at this height
+FRONTLINE_DANGER_ZONE = 250 # if an AT is within this radius from any RED town, we consider it to be on frontline. Distance is for 4 ticks.
 
 QUEUE_TEMPLATE = cv2.imread('templates/Queue.png',0)
 DEPLOY_TEMPLATE = cv2.imread('templates/Deploy.png',0)
 RETREAT_TEMPLATE = cv2.imread('templates/Retreat.png',0)
+REINFORCE_TEMPLATE = cv2.imread('templates/Reinforce.png',0)
 MORALE_TEMPLATE = cv2.imread('templates/Morale.png',0)
+MOVINGTO_TEMPLATE = cv2.imread('templates/Moving_to.png',0)
 AT_TEMPLATES = [
     # template, name, [maxSoldiers, maxVehicles, maxMorale]
-    [cv2.imread('templates/light_armor.png', 0), 'Light_Armor', [20, 16, 100]],
-    [cv2.imread('templates/motorized_guard.png', 0), 'Motorized_Guard', [36, 12, 100]],
-    [cv2.imread('templates/motorized_recon.png', 0), 'Motorized_Recon', [24, 24, 100]],
-    [cv2.imread('templates/mechanized_recon.png', 0), 'Mechanized_Recon', [28, 14, 100]],
-    [cv2.imread('templates/fighter_recon.png', 0), 'Fighter_Recon', [20, 16, 100]]
+    [cv2.imread('templates/Assault_Teams/light_armor.png', 0), 'Light_Armor', [20, 16, 100]],
+    [cv2.imread('templates/Assault_Teams/motorized_guard.png', 0), 'Motorized_Guard', [36, 12, 100]],
+    [cv2.imread('templates/Assault_Teams/motorized_recon.png', 0), 'Motorized_Recon', [24, 24, 100]],
+    [cv2.imread('templates/Assault_Teams/mechanized_recon.png', 0), 'Mechanized_Recon', [28, 14, 100]],
+    [cv2.imread('templates/Assault_Teams/fighter_recon.png', 0), 'Fighter_Recon', [20, 16, 100]]
 ]
-MAXIMUM_ATs_ON_PANEL = 20 # how many AT's can fit in sidebar, make it bigger than the actual number
-AT_VERTICAL_STEP = 106 # vertical step between AT's in sidebar
-AT_VERTICAL_SPACING = 150 # the list of ATs starts at this height
+
+MAJOR_CITIES_TEMPLATES = []
+directory = "templates/Major_Cities/"
+files = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+for file in files:
+    filepath = directory + file
+    cv2_template = cv2.imread(filepath, 0)
+    MAJOR_CITIES_TEMPLATES.append((cv2_template, file[:-4]))
 
 def die():
     print 'Make sure you\'re running H&G in 1920x1080 window, your tab is set to GLOBAL & your color scheme is RED-BLUE.'
@@ -50,23 +68,26 @@ def make_screenshot(saveDirectory=None):
     :return: returns a PIL image
     """
     global SCREEN_RESOLUTION
+    global SCREEN_CENTER
     if SCREEN_RESOLUTION is None:
         SCREEN_RESOLUTION = pyautogui.size()
+        SCREEN_CENTER = (SCREEN_RESOLUTION[0] / 2, SCREEN_RESOLUTION[1] / 2)
     screenshot = pyautogui.screenshot()
     if saveDirectory is not None:
         screenshot_name = saveDirectory + str(int(time.time())) + '.png'
         screenshot.save(screenshot_name)
     return screenshot
 
-def move_to_altitude():
+def move_to_altitude(alt):
     """
-    Sets the camera to be on 7 ticks above the map.
+    Sets the camera to be on alt ticks above the map.
+    :param alt: ticks to zoom out
     :return:
     """
     # Zoom in fully
     scroll(1, 15)
     # Zoom out slightly
-    scroll(-1, 7)
+    scroll(-1, alt)
 
 def scroll(direction=1, ticks=1, delay=0):
     """
@@ -87,9 +108,8 @@ def move_to_city(cityNumber):
     :param cityNumber: the city we want to click on
     :return: nothing
     """
-    x, y = FIRST_STAR
-    pyautogui.click(x + STAR_STEP * cityNumber, y)
-    pyautogui.moveTo(SCREEN_RESOLUTION[0] / 2, SCREEN_RESOLUTION[1] / 2)
+    pyautogui.click(get_city_pos(cityNumber))
+    pyautogui.moveTo(SCREEN_CENTER)
     time.sleep(0.5)
     scroll(-1, 2, SCROLLING_SLEEP)  # to compensate zooming out
     time.sleep(0.5)
@@ -180,7 +200,7 @@ def find_frontline_city(countOfControlledCities=None):
         countOfControlledCities = count_main_cities()
     for k in xrange(countOfControlledCities):
         move_to_city(k)
-        cur_city_pos = (SCREEN_RESOLUTION[0] / 2, SCREEN_RESOLUTION[1] / 2)
+        cur_city_pos = SCREEN_CENTER
         battles = find_battles()
         if battles is not None:
             for i in battles[0, :]:
@@ -216,18 +236,19 @@ def is_AT_panel_opened(PIL_image=None):
         return True
     return False
 
-def toggle_AT_panel(PIL_image=None, action=None):
-    if action is None:
-        if is_AT_panel_opened(PIL_image):
-            action = 'close'
-        else:
-            action = 'open'
+def toggle_AT_panel(action, PIL_image=None):
+    isOpen = is_AT_panel_opened(PIL_image)
+    if isOpen & action == 'open':
+        return
+    if not isOpen & action == 'close':
+        return
     if action == 'open':
         pyautogui.click(1505, 173)
         print 'Opening AT panel...'
     if action=='close':
         pyautogui.click(1698, 173)
         print 'Closing AT panel...'
+    time.sleep(1.5)
 
 def template_on_image(cv2_gray, template, threshold, debug=False):
     w, h = template.shape[::-1]
@@ -281,10 +302,12 @@ def parse_team_status(PIL_image, top_left, maxStats):
     inQueue = template_on_image(cv2_gray, QUEUE_TEMPLATE, 0.85, debug=False)
     canBeDeployed = template_on_image(cv2_gray, DEPLOY_TEMPLATE, 0.85, debug=False)
     isInBattle = template_on_image(cv2_gray, RETREAT_TEMPLATE, 0.85, debug=False)
+    isMoving = template_on_image(cv2_gray, MOVINGTO_TEMPLATE, 0.85, debug=False)
+    canBeReinforced = template_on_image(cv2_gray, REINFORCE_TEMPLATE, 0.85, debug=False)
     #cv2_image = convert_PILToCV2(PIL_image)
     #cv2.line(cv2_image, vehicles_bar_pos, soldiers_bar_pos, (0,0,255))
     #cv2.imshow(name, cv2_image)
-    curStats = (soldiers_bar_status, vehicle_bar_status, morale_bar_status, inQueue, canBeDeployed, isInBattle)
+    curStats = (soldiers_bar_status, vehicle_bar_status, morale_bar_status, inQueue, canBeDeployed, isMoving, canBeReinforced, isInBattle)
     print curStats
     return curStats
 
@@ -347,9 +370,48 @@ def count_bar_pixels(PIL_image, color, point):
         col = PIL_image.getpixel((x + length, y))
     return length
 
+def get_city_pos(city):
+    x, y = FIRST_STAR
+    x += STAR_STEP * city
+    return (x, y)
+
+def get_city_name(city):
+    pyautogui.moveTo(get_city_pos(city))
+    time.sleep(1.5)
+    x, y = FIRST_STAR
+    screencap = make_screenshot()
+    cv2_gray = convert_PILToCV2(screencap, cv2.COLOR_RGB2GRAY)
+    cv2_gray = get_cropped(cv2_gray, box=((x, y), (x + STAR_STEP * 5, y + STAR_STEP * 3)))
+    for mct in MAJOR_CITIES_TEMPLATES:
+        t, name = mct
+        if template_on_image(cv2_gray, t, 0.9):
+            return name
+    return 'Unknown'
+
+
+def is_far_from_frontline(team):
+    #pyautogui.doubleClick(team.getPos())
+    #time.sleep(1.5)
+    # battles = find_battles()
+    #if battles is not None:
+    #    minDistance = 1000
+    #    for i in battles[0, :]:
+    #        x, y, r = (i[0], i[1], i[2])
+    #        d = distance((x, y), SCREEN_CENTER)
+    #        if d < minDistance:
+    #            minDistance = d
+    #    return d > 500
+    #else:
+    #    return True
+    return True
+
+def move_away_from_frontline(team):
+    return
+
+
 def manage_team(team):
     """
-    Makes a dicision on what to do with given assault team: deploy, send to attack, send to retreat, nothing
+    Makes a decision what to do with given assault team: deploy, send to attack, send to retreat, nothing
     :param team:
     :return: nothing
     """
@@ -363,25 +425,51 @@ def manage_team(team):
             print 'Failed to find main cities on the screen.'
             die()
         print 'At this moment our faction controls %d main cities...' % count
-        move_to_altitude()
-        city = find_frontline_city(count)
-        print 'City #%d has the closest battle (distance %d), deploying ATs in there...' % (city[0], city[2])
-
+        move_to_altitude(7)
+        cityID, battlePos, distanceToBattle = find_frontline_city(count)
+        cityName = get_city_name(cityID)
+        print 'The closest battle is next to %s, next deploy will be there...' % cityName
+        # Buying troops
+        toggle_AT_panel('open')
         pyautogui.click(team.getIconPos())
-        # To be continued...
-
+        time.sleep(1.5)
+        pyautogui.click(BUY_BUTTON_POS)
         return
 
-    if team.needsRest() | team.needsReinforcements():
-        # Sending team to retreat
-        if team.needsRest():
-            print ' It needs rest.',
-        if team.needsReinforcements():
-            print ' It needs to be reinforced.',
+    if team.isInQueue() | team.isMoving() | team.isInBattle():
+        return
 
+    # Team is deployed, not in battle, not in queue
+    if team.needsRest() | team.needsReinforcements():
+        if is_far_from_frontline(team):
+            if team.needsReinforcements():
+                if team.canBeReinforced():
+                    # Reinforce the team!
+                    print 'Putting %s in queue for reinforcements.' % team.getName()
+                    # Buying troops
+                    toggle_AT_panel('open')
+                    pyautogui.click(team.getIconPos())
+                    time.sleep(1.5)
+                    pyautogui.click(BUY_BUTTON_POS)
+                    return
+                else:
+                    # Reinforcements are en route
+                    print 'Team %s waiting for reinforcements to reach it.' % team.getName()
+                    return
+            else:
+                # The team is tired. Resting!
+                print '%s is resting in safe place.' % team.getName()
+                return
+        else:
+            # Send team away from the frontline
+            print 'Sending %s away from the frontline.' % team.getName()
+            move_away_from_frontline(team)
+            return
+
+    # According to team's thresholds, team's status is OK.
     if team.isReady():
         # Sending team to the battlefield
-        print '%s still can fight alright, sending it to a battlefield...'
+        print '%s still can fight alright, sending it to a battlefield...' % team.getName()
         return
 
 
@@ -392,52 +480,78 @@ def manage_team(team):
 def main():
 
     time.sleep(3)
+    # move_to_altitude(4)
+    screencap = make_screenshot()
 
-    # Counting main cities
-    #count = count_main_cities()
-    #if count == 0:
-    #    print 'Failed to find main cities on the screen.'
-    #    die()
-    #print 'It looks like our faction controls %d main cities...' % count
+    # Finding red towns and marking them with circles
+    cv2_image = convert_PILToCV2(screencap)
+    cv2_mask_red = get_mask(RED_BGR, cv2_image, range=50)
+    kernel = np.ones((3, 3), np.uint8)
+    cv2_mask_red = cv2.medianBlur(cv2_mask_red, 7)
+    # Experiment with circles
+    red_towns = cv2.HoughCircles(cv2_mask_red, cv2.HOUGH_GRADIENT, 1, 20, param1=20, param2=9, minRadius=11, maxRadius=15)
+    #cv2_image = cv2.cvtColor(cv2_mask_red, cv2.COLOR_GRAY2BGR)
+    if red_towns is not None:
+        red_towns = np.uint16(np.around(red_towns))
+        #for i in red_towns[0, :]:
+        #    cv2.circle(cv2_image, (i[0], i[1]), i[2], (0, 255, 0), 2)
+        #    cv2.circle(cv2_image, (i[0], i[1]), 2, (0, 0, 255), 3)
+    #cv2.imshow('circles', cv2_image)
+
+    # Finding blue towns and marking them with circles
+    cv2_image = convert_PILToCV2(screencap)
+    cv2_mask_blue = get_mask(BLUE_BGR, cv2_image, range=80)
+    cv2_mask_gray = get_mask(GRAY_BGR, cv2_image, range=10)
+    cv2_mask = cv2.add(cv2_mask_blue, cv2_mask_gray)
+
+    # Ruling out blue towns next to red towns
+    for town in red_towns[0, :]:
+        x, y, r = town
+        cv2.circle(cv2_mask, (x, y), FRONTLINE_DANGER_ZONE, 0, -2)
+
+    cv2_mask = cv2.medianBlur(cv2_mask, 7)
+    blue_towns = cv2.HoughCircles(cv2_mask, cv2.HOUGH_GRADIENT, 1, 20, param1=20, param2=9, minRadius=11, maxRadius=15)
+    cv2_image = cv2.cvtColor(cv2_mask, cv2.COLOR_GRAY2BGR)
+    if blue_towns is not None:
+        blue_towns = np.uint16(np.around(blue_towns))
+        for i in blue_towns[0, :]:
+            cv2.circle(cv2_image, (i[0], i[1]), i[2], (0, 255, 0), 2)
+            cv2.circle(cv2_image, (i[0], i[1]), 2, (0, 0, 255), 3)
+
+    # Adding FRONTLINE_DANGER_ZONE areas
+    for town in red_towns[0, :]:
+        x, y, r = town
+        cv2.circle(cv2_image, (x, y), FRONTLINE_DANGER_ZONE, (100,100,255), 2)
+    # Adding RED towns
+    for town in red_towns[0, :]:
+        x, y, r = town
+        cv2.circle(cv2_image, (x, y), r, (0,0,255), -1)
+    cv2.imshow('circles', cv2_image)
+
+    cv2.waitKey(0)
+    exit()
 
     while True:
-
-        screencap = make_screenshot()
-
         # Open AT panel if it's closed
         if not is_AT_panel_opened:
-            toggle_AT_panel(screencap, 'open')
+            toggle_AT_panel(action='open')
+
+        screencap = make_screenshot()
 
         teams = get_teams(screencap, debug=False)
         if teams.__len__() == 0:
             print 'No assault teams found, nothing to deploy.'
             die()
 
-
-
         # Managing ATs
+        for team in teams:
+            manage_team(team)
 
-        cv2.waitKey(0)
+
+        time.sleep(10)
+
+        #cv2.waitKey(0)
         exit()
-    # Gathering information about available ATs
-
-    # Selecting a deploy point
-    #move_to_altitude()
-    #city = find_frontline_city(count)
-    #print 'City #%d has the closest battle (distance %d), deplying ATs in there...' % (city[0], city[2])
-
-    # obsolete
-    #print 'Creating an attack plan...'
-    #move_to_city(city[0])
-    #plan = make_screenshot()
-    #cv2_plan = convert_PILToCV2(plan)
-    #cur_city_pos = (SCREEN_RESOLUTION[0] / 2, SCREEN_RESOLUTION[1] / 2)
-    #cv2.rectangle(cv2_plan, cur_city_pos, cur_city_pos, (0,255,0), 10)
-    #cv2.putText(cv2_plan, 'City #%d sending ATs' % city[0], cur_city_pos, cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
-    #cv2.line(cv2_plan, cur_city_pos, city[1], (0, 0, 255), 4)
-    #cv2.imwrite(str(int(time.time())) + '.png', cv2_plan)
-
-
 
 
 if __name__ == "__main__":

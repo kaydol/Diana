@@ -10,10 +10,12 @@ class AssaultTeam:
     curMorale = 0
     thresholdSoldiers = 0.5
     thresholdVehicles = 0.5
-    thresholdMorale = 0.3
+    thresholdMorale = 0.5
     inQueue = False
     inBattle = False
-    canBeDeployed = False
+    canDeploy = False
+    canReinforce = False
+    moving = False
 
     def __init__(self, name, XY, (maxSoldiers, maxVehicles, maxMorale)):
         self.name = name
@@ -32,7 +34,7 @@ class AssaultTeam:
         self.curVehicles = vehicles
 
     def setStatus(self, array):
-        self.curSoldiers, self.curVehicles, self.curMorale, self.inQueue, self.canBeDeployed, self.inBattle = array
+        self.curSoldiers, self.curVehicles, self.curMorale, self.inQueue, self.canDeploy, self.moving, self.canReinforce, self.inBattle = array
 
     def setThreshold(self, parameter, threshold):
         if str(parameter).lower() == 'morale':
@@ -88,14 +90,20 @@ class AssaultTeam:
     def isDeployed(self):
         return self.hasSoldiers()
 
+    def canBeReinforced(self):
+        return self.canReinforce
+
     def canBeDeployed(self):
-        return self.canBeDeployed
+        return self.canDeploy & self.hasMaxMorale()
 
     def isReady(self):
         return (not self.needsRest()) & (not self.needsVehicles()) & (not self.needsSoldiers())
 
     def isInQueue(self):
         return self.inQueue
+
+    def isMoving(self):
+        return self.moving
 
     def isInBattle(self):
         return self.inBattle
