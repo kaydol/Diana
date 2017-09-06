@@ -15,7 +15,7 @@ class AssaultTeam:
     inBattle = False
     canDeploy = False
     canReinforce = False
-    moving = False
+    Moving = False
 
     def __init__(self, name, XY, (maxSoldiers, maxVehicles, maxMorale)):
         self.name = name
@@ -34,7 +34,7 @@ class AssaultTeam:
         self.curVehicles = vehicles
 
     def setStatus(self, array):
-        self.curSoldiers, self.curVehicles, self.curMorale, self.inQueue, self.canDeploy, self.moving, self.canReinforce, self.inBattle = array
+        self.curSoldiers, self.curVehicles, self.curMorale, self.inQueue, self.canDeploy, self.Moving, self.canReinforce, self.inBattle = array
 
     def setThreshold(self, parameter, threshold):
         if str(parameter).lower() == 'morale':
@@ -68,9 +68,7 @@ class AssaultTeam:
         return False
 
     def needsRest(self):
-        if self.curMorale < self.thresholdMorale * self.maxMorale:
-            return True
-        return False
+        return self.curMorale < self.thresholdMorale * self.maxMorale
 
     def needsReinforcements(self):
         return self.needsVehicles() | self.needsSoldiers()
@@ -83,7 +81,7 @@ class AssaultTeam:
         return self.curMorale >= self.maxMorale
 
     def isKIA(self):
-        if self.curMorale * self.curSoldiers == 0:
+        if self.curMorale * self.curSoldiers <= 0:
             return True
         return False
 
@@ -97,13 +95,18 @@ class AssaultTeam:
         return self.canDeploy & self.hasMaxMorale()
 
     def isReady(self):
-        return (not self.needsRest()) & (not self.needsVehicles()) & (not self.needsSoldiers())
+        return (not self.needsRest()) & \
+               (not self.needsVehicles()) & \
+               (not self.needsSoldiers()) &\
+               (not self.isMoving()) & \
+               (not self.isInBattle()) & \
+               (not self.isInQueue())
 
     def isInQueue(self):
         return self.inQueue
 
     def isMoving(self):
-        return self.moving
+        return self.Moving
 
     def isInBattle(self):
         return self.inBattle
