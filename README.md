@@ -13,7 +13,7 @@ She's originally designed to be used under one OS (Windows) with one screen reso
 - She can't tell if her commanding skills raise warfunds or waste them. Therefore, she can waste all your warfunds if left unchecked for a long time.
 - The only type of assault groups she can raise money with is infantry, the nuder the better (motorized infantry is more likely to give less or no profits than a simple infantry due to increased cost).
 
-# ToDo
+# Possible improvements
 - If text recognizing was implemented, Diana would be able to keep notes of changes in ammount of warfunds and stop or change her tactic if she's wasting money. Text recognizing would also allow to deploy assault groups in the town closest to the frontline and provide possibilities for implementing a cross-resolution solution.
 - Implementing more sophisticated strategies (better than simple 'send to the closest battle' approach) would probably yield better profits.
 - Building a graph of towns based solely on screenshots is a very complicated task, but that would allow to implement better assault group navigation and possibly building routes with multiple milestones.
