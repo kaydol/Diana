@@ -8,9 +8,10 @@ She's originally designed to be used under one OS (Windows) with one screen reso
 - Retreat groups to rear if they need rest and\or reinforcements
 - Reinforce groups once they've reached a safe town and let them rest 
 - Redeploy assault groups if they were destroyed
+- Simulate being active to prevent getting disconnected from the server for being AFK
 
 # What she can't
-- She can't tell if her commanding skills raise warfunds or waste them. Therefore, she can waste all your warfunds if left unchecked for a long time.
+- She can't tell (yet) if her commanding skills raise or waste warfunds. Therefore, she can waste all your warfunds if left unchecked for a long time.
 - The only type of assault groups she can raise money with is infantry, the nuder the better (motorized infantry is more likely to give less or no profits than a simple infantry due to increased cost).
 
 # Possible improvements
