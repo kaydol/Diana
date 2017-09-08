@@ -1,6 +1,6 @@
 
 class AssaultTeam:
-    name = 'Assault Team'
+    type = 'Unknown'
     XY = (0, 0)
     maxSoldiers = 0
     maxVehicles = 0
@@ -17,15 +17,15 @@ class AssaultTeam:
     canReinforce = False
     Moving = False
 
-    def __init__(self, name, XY, (maxSoldiers, maxVehicles, maxMorale)):
-        self.name = name
+    def __init__(self, type, XY, (maxSoldiers, maxVehicles, maxMorale)):
+        self.type = type
         self.XY = XY
         self.maxMorale = maxMorale
         self.maxSoldiers = maxSoldiers
         self.maxVehicles = maxVehicles
 
-    def setName(self, name):
-        self.name = name
+    def setType(self, type):
+        self.type = type
     def setMorale(self, morale):
         self.curMorale = morale
     def setSoldiers(self, soldiers):
@@ -44,8 +44,8 @@ class AssaultTeam:
         if str(parameter).lower() == 'vehicles':
             self.thresholdVehicles = threshold
 
-    def getName(self):
-        return self.name
+    def getType(self):
+        return self.type
     def getPos(self):
         return self.XY
     def getIconPos(self):
