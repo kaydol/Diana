@@ -5,6 +5,6 @@ She's originally designed to be used under one OS (Windows) with one screen reso
 
 # What she can
 - Move assault groups around the global map
-- Retreat groups in rear if they need rest and\or reinforcements
+- Retreat groups to rear if they need rest and\or reinforcements
 - Reinforce groups once they've reached a safe town and let them rest 
 - Redeploy assault groups if they were destroyed
