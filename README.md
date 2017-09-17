@@ -3,18 +3,17 @@ Diana is a game bot written on Python 2.7. She's not completely finished and the
 
 She's originally designed to be used under one OS (Windows) with one screen resolution (1920x1080) and a limited set of available ATs. Majority of stuff was brutally hardcoded to fit given resolution and a specific game version, so Diana is extremely vulnerable for any game UI update.
 
-# What she can
+## What she can
 - Order assault groups to engage in nearest battles
 - Retreat groups to rear if they need rest and\or reinforcements
-- Reinforce groups once they've reached a safe town and let them rest 
-- Redeploy assault groups if they were destroyed
+- Reinforce groups once they've reached a safe place and let them rest 
+- Redeploy assault groups in random town if they were destroyed, and then send them to frontline
 - Simulate being active to prevent getting disconnected from the server for being AFK
 
-# What she can't
-- She can't tell (yet) if her commanding skills raise or waste warfunds. Therefore, she can waste all your warfunds if left unchecked for a long time.
-- The only type of assault groups she can raise money with is infantry, the nuder the better (motorized infantry is more likely to give less or no profits than a simple infantry due to increased cost).
+## Downsides
+- Diana can't tell (yet) if her commanding skills raise or waste warfunds, and and truth to be told, she mostly wastes them.
+- While moving an assault team, Diana sends it without checking if team might encounter enemy towns on the way, she sends them straight to the point she found to be safe. If there's an enemy town in between team and a safe position, retreating team might get destroyed or surrender.
 
-# Possible improvements
-- If text recognizing was implemented, Diana would be able to keep notes of changes in ammount of warfunds and stop or change her tactic if she's wasting money. Text recognizing would also allow to deploy assault groups in the town closest to the frontline and provide possibilities for implementing a cross-resolution solution.
-- Implementing more sophisticated strategies (better than simple 'send to the closest battle' approach) would probably yield better profits.
-- Building a graph of towns based solely on screenshots is a very complicated task, but that would allow to implement better assault group navigation and possibly building routes with multiple milestones.
+## Possible improvements
+- If **text recognizing** was implemented, Diana would be able to keep notes of changes in ammount of warfunds and stop or change her tactic if she's wasting money. Text recognizing would also allow to deploy assault groups in the town closest to the frontline and provide possibilities for implementing a cross-resolution solution.
+- **Building a graph of towns** based solely on screenshots is a very complicated task, but that would allow to implement better assault group navigation and building routes with multiple milestones, yeilding awesome possibilities for safer retreating as well as more sophisticated attack strategies.
