@@ -11,7 +11,7 @@ She's originally designed to be used under one OS (Windows) with one screen reso
 - Simulate being active to prevent getting disconnected from the server for being AFK
 
 ## Downsides
-- Diana can't tell (yet) if her commanding skills raise or waste warfunds, and and truth to be told, she mostly wastes them.
+- Diana can't tell (yet) if her commanding skills raise or waste warfunds, and, truth to be told, she mostly wastes them.
 - While moving an assault team, Diana sends it without checking if team might encounter enemy towns on the way, she sends them straight to the point she found to be safe. If there's an enemy town in between team and a safe position, retreating team might get destroyed or surrender.
 
 ## Possible improvements
