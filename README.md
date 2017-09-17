@@ -11,8 +11,8 @@ She's originally designed to be used under one OS (Windows) with one screen reso
 - Simulate being active to prevent getting disconnected from the server for being AFK
 
 ## Downsides
-- Diana can't tell (yet) if her commanding skills raise or waste warfunds, and, truth to be told, she mostly wastes them.
-- While moving an assault team, Diana sends it without checking if team might encounter enemy towns on the way, she sends them straight to the point she found to be safe. If there's an enemy town in between team and a safe position, retreating team might get destroyed or surrender.
+- Diana can't tell (yet) if her commanding skills raise or waste warfunds, and, truth to be told, she mostly wastes them (since she plays nearly as good as an average player, that fact made me doubt if it's even possible to effectively raise warfunds playing solely on strategic map).
+- While moving an assault team, Diana sends it without checking if team might encounter enemy towns on the way, she sends them straight to the point of interest. If there's an enemy town in between team and a destination, attacking team will create a new battle, while retreating team might get destroyed or surrender.
 
 ## Possible improvements
 - If **text recognizing** was implemented, Diana would be able to keep notes of changes in ammount of warfunds and stop or change her tactic if she's wasting money. Text recognizing would also allow to deploy assault groups in the town closest to the frontline and provide possibilities for implementing a cross-resolution solution.
