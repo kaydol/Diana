@@ -110,3 +110,6 @@ class AssaultTeam:
 
     def isInBattle(self):
         return self.inBattle
+
+    def isReinforcement(self):
+        return ( self.maxMorale + self.maxSoldiers + self.maxVehicles == 0 )
