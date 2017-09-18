@@ -11,6 +11,7 @@ She's originally designed to be used under one OS (Windows) with one screen reso
 - Simulate being active to prevent getting disconnected from the server for being AFK
 
 ## Downsides
+- Diana is not suitable for mass distribution and in its current state works only on one PC.
 - Diana can't tell (yet) if her commanding skills raise or waste warfunds, and, truth to be told, she mostly wastes them (since she plays nearly as good as an average player, that fact made me doubt if it's even possible to effectively raise warfunds playing solely on strategic map).
 - While moving an assault team, Diana sends it without checking if team might encounter enemy towns on the way, she sends them straight to the point of interest. If there's an enemy town in between team and a destination, attacking team will create a new battle, while retreating team might get destroyed or surrender.
 - As a side effect of the previous downside, it's possible to encounter a situation where a team gets cut off from the nearest major city and constantly tries to get reinforcements, which then disappear after they reach hostiles on their way. That would create a reinforcing loop that drains all your warfunds.
