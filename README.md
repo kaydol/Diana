@@ -9,6 +9,7 @@ She's originally designed to be used under one OS (Windows) with one screen reso
 - Reinforce groups once they've reached a safe place and let them rest 
 - Redeploy assault groups in random town if they were destroyed, and then send them to frontline
 - Simulate being active to prevent getting disconnected from the server for being AFK
+- If there are no battles around the team, it's being sent to the city with closest battle
 
 ## Downsides
 - Diana is not suitable for mass distribution and in its current state works only on one PC.
