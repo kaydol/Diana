@@ -18,6 +18,8 @@ BUY_BUTTON_POS = (1275, 600)
 OPEN_PANEL_POS = (1698, 173)
 # position of the arrow that closes the AT panel
 CLOSE_PANEL_POS = (1505, 173)
+# position of 'Close' button in the battle view
+CLOSE_POS = (658, 794)
 # position of 'No, Thanks' button in AT deployment menu
 NO_THANKS_POS = (960, 790)
 # position of the first blue star on the top of the screen
@@ -240,7 +242,8 @@ def distance(pos1, pos2):
 
 def find_battles_on_screen(debug=False):
     """
-    Makes two screenshots with 1.5s interval, merges their masks to compensate glowing and then returns the array of found circles, or None. We anticipate every circle to represent a battle, but false positives are possible.
+    Makes two screenshots with 1.5s interval, merges their masks to compensate glowing and then returns the array of
+    found circles, or None. We anticipate every circle to represent a battle, but false positives are possible.
     :return: numpy array of circles with elements (circle_center_x, circle_center_y, radius)
     """
 
@@ -270,6 +273,16 @@ def find_battles_on_screen(debug=False):
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     # mask = cv2.medianBlur(mask, 7)
+
+    # Excluding interface from the picture by coloring specific areas of the screen into black
+    # Excluding major towns and some of the interface on top
+    upper_left = (0, 0)
+    bottom_right = (SCREEN_RESOLUTION[0], 180)
+    cv2.rectangle(mask, upper_left, bottom_right, 0, -1)
+    # Excluding AT panel
+    upper_left = (1542, 149)
+    bottom_right = (SCREEN_RESOLUTION[0], 150 + TEAMS.__len__() * 100)
+    cv2.rectangle(mask, upper_left, bottom_right, 0, -1)
 
     # Finding circles aka battles
     circles = cv2.HoughCircles(mask, cv2.HOUGH_GRADIENT, 1, 14, param1=20, param2=9, minRadius=7, maxRadius=11)
@@ -417,16 +430,16 @@ def parse_team_status(PIL_image, top_left, maxStats):
     bar_width = 50
 
     # Counting the length of the vehicles bar
-    length = count_bar_pixels(PIL_image, GREEN, vehicles_bar_pos)
+    length = count_bar_pixels(PIL_image, GREEN, vehicles_bar_pos) + count_bar_pixels(PIL_image, RED, vehicles_bar_pos)
     vehicle_bar_status = length / float(bar_width) * maxVehicles
 
     # Counting the length of the soldiers bar
-    length = count_bar_pixels(PIL_image, GREEN, soldiers_bar_pos)
+    length = count_bar_pixels(PIL_image, GREEN, soldiers_bar_pos) + count_bar_pixels(PIL_image, RED, vehicles_bar_pos)
     soldiers_bar_status = length / float(bar_width) * maxSoldiers
 
     # Counting the length of the morale bar
     morale_bar_width = 42
-    length = count_bar_pixels(PIL_image, GREEN, morale_bar_pos)
+    length = count_bar_pixels(PIL_image, GREEN, morale_bar_pos) + count_bar_pixels(PIL_image, RED, vehicles_bar_pos)
     morale_bar_status = length / float(morale_bar_width) * maxMorale
 
     # Check if the AT is currently in queue
@@ -490,7 +503,7 @@ def get_teams(PIL_image, debug=False):
                 cv2.putText(cv2_gray, '%s' % type, (pt[0], pt[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, 255, 1)
 
     if debug:
-        cv2.imshow('AT sidebar analysis', cv2_gray)
+        cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_gray)
 
     return teams
 
@@ -791,8 +804,9 @@ def manage_team(team, debug=False):
             print 'Couldn\'t find any towns in the list of towns to deploy, but that list can\'t be empty!'
             die()
 
-        # Since reading text is not implemented yet, we simply click on a random town to deploy
         # TODO implement text recognition to deliberately choose the city we want to spawn at
+
+        # Since reading text is not implemented yet, we simply click on a random town to deploy
         circle = random.choice(deploy_points)
         x, y, r = circle[0, :]
         pyautogui.click(x, y, duration=get_rnd_mouse_speed())
@@ -880,19 +894,18 @@ def manage_team(team, debug=False):
         print '%s %s can fight alright, trying to send it in battle...' % (get_loc_time(), team.getType())
 
         # Looking for battles nearby
-        battles = find_battles_on_screen(debug=False)
+        battles = find_battles_on_screen(debug=True)
         if battles is None:
             print 'No battles around :('
 
-            # TODO we also might find no battles around if the altitude was compromised, and not only because
-            # there are actually no battles
+            # TODO we also might find no battles around if the altitude was compromised
 
             # Findind city closest to the frontline
             count = count_major_cities()
             if count == 0:
-                print 'Failed to find main cities on the screen.'
+                print 'Failed to find major cities on the screen.'
                 die()
-            print '%s At this moment our faction controls %d main cities...' % (get_loc_time(), count)
+            print '%s At this moment our faction controls %d major cities...' % (get_loc_time(), count)
             move_to_altitude(7)
             cityID, battlePos, distanceToBattle = find_frontline_city(count)
             cityName = get_city_name(cityID)
@@ -926,7 +939,22 @@ def manage_team(team, debug=False):
 
             move_team_to(team, battlePos)
 
-        return
+            # Check if we sent a team that can not be sent, and accidentally clicked on battle
+            time.sleep(INTERFACE_SLEEP)
+            screencap = make_screenshot()
+            col1 = screencap.getpixel(CLOSE_POS)
+
+            time.sleep(INTERFACE_SLEEP)
+            screencap = make_screenshot()
+            col2 = screencap.getpixel(CLOSE_POS)
+
+            # If colors don't match, then there is an overlapping window appeared, and we need to close it
+            ClickedOnBattle = any(map(eq, col1, col2))
+            if ClickedOnBattle:
+                print '%s Accidentally clicked on town, closing the window now.' % get_loc_time()
+                pyautogui.click(CLOSE_POS, duration=get_rnd_mouse_speed())
+
+    return
 
 ########################################################################################################################
 
@@ -939,13 +967,9 @@ def main():
     global FAILED_ATTEMPTS
     global CURRENT_ALTITUDE
     global TEAMS
-    #try:
+
     time.sleep(3)
-    #exit()
-    #find_battles_on_screen(debug=True)
-    #get_towns_to_deploy(debug=True)
-    #isInSafeTown, safeTown = get_position_sitrep(debug=True)
-    #exit()
+
     while True:
         # Open AT panel
         toggle_panel(action='open', debug=False)
@@ -966,16 +990,8 @@ def main():
         time.sleep(5 + random.randrange(0, 15))
 
         if FAILED_ATTEMPTS > FAILED_ATTEMPTS_LIM:
-            print '%s There were too many failed attempts to deploy and\or retreat. Zooming must\'ve been broken.' % get_loc_time()
+            print '%s There were too many failed attempts to deploy\\retreat. Zooming must\'ve been broken.' % get_loc_time()
             reset_altitude()
-
-    #except BaseException:
-    #    print BaseException
-        # Showing desktop screen in case we got an exception
-        #pyautogui.click(SCREEN_RESOLUTION)
-        # The idea is: seeing desktop instead of game window
-        # after you came back from being AFK will immediately
-        # tell you that Octavia is not working anymore
 
 ########################################################################################################################
 

@@ -45,3 +45,16 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# =========================
+# Custom Files & Folders
+# =========================
+
+# Compiled Python files
+.pyc
+
+# Pycharm project folder
+.idea/
+
+# PyInstaller build folder
+build/
