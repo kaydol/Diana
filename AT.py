@@ -50,15 +50,24 @@ class AssaultTeam:
         return self.XY
     def getIconPos(self):
         return (self.XY[0] + 290, self.XY[1] + 28)
+
     def getSoldiers(self):
-        return self.curMorale
+        if self.curSoldiers > self.maxSoldiers:
+            return self.maxSoldiers
+        return self.curSoldiers
+
     def getVehicles(self):
-        return self.curMorale
+        if self.curVehicles > self.maxVehicles:
+            return self.maxVehicles
+        return self.curVehicles
+
     def getMorale(self):
+        if self.curMorale > self.maxMorale:
+            return self.maxMorale
         return self.curMorale
 
     def needsVehicles(self):
-        if self.curVehicles < self.thresholdVehicles * self.maxVehicles:
+        if self.getVehicles() < self.thresholdVehicles * self.maxVehicles:
             return True
         return False
 
