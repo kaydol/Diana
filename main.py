@@ -2,15 +2,16 @@ from PIL import Image
 import cv2
 import numpy as np
 from operator import eq
+from subprocess import call
 
 import math
 import random
 import time
+
 import pyautogui
 pyautogui.FAILSAFE = False
 
 import AT
-import os
 
 # button we press to confirm buying or AT reinforcing
 BUY_BUTTON_POS = (1275, 600)
@@ -38,7 +39,7 @@ RED_BGR = (RED[2], RED[1], RED[0])
 YELLOW_BGR = (97, 255, 255)
 
 SCREEN_RESOLUTION = pyautogui.size()
-SCREEN_CENTER = (SCREEN_RESOLUTION[0] / 2, SCREEN_RESOLUTION[1] / 2)
+SCREEN_CENTER = (SCREEN_RESOLUTION[0] / 2, SCREEN_RESOLUTION[1] / 2 - 10) # The real center of the game screen is slightly above
 SCROLLING_STEP = 2000 # do not change
 SCROLLING_SLEEP = 2 # seconds to wait between mouse wheel scrolls
 TRANSLATION_SLEEP = 2.5 # seconds to wait after teleporting to somewhere
@@ -46,12 +47,13 @@ INTERFACE_SLEEP = 2 # seconds to wait after UI interactions
 
 # if an AT is within this radius from any RED town, we consider it to be on frontline
 # send debug=True into get_position_sitrep() to see these circles on screenshots in DEBUG_DIR
-FRONTLINE_DANGER_ZONE = 250
+FRONTLINE_DANGER_ZONE = 200
 
 # directory where we store debug information
 DEBUG_DIR = 'D:/Diana/'
 # directory with templates
 TEMPLATES_DIR = 'data/templates/'
+
 
 QUEUE_TEMPLATE = cv2.imread(TEMPLATES_DIR + 'Queue.png',0)
 DEPLOY_TEMPLATE = cv2.imread(TEMPLATES_DIR + 'Deploy.png',0)
@@ -59,6 +61,9 @@ RETREAT_TEMPLATE = cv2.imread(TEMPLATES_DIR + 'Retreat.png',0)
 REINFORCE_TEMPLATE = cv2.imread(TEMPLATES_DIR + 'Reinforce.png',0)
 MORALE_TEMPLATE = cv2.imread(TEMPLATES_DIR + 'Morale.png',0)
 MOVINGTO_TEMPLATE = cv2.imread(TEMPLATES_DIR + 'Moving_to.png',0)
+
+REDCROSS_TEMPLATE = cv2.imread(TEMPLATES_DIR + 'Close_window.png',0) # Template of red cross
+BUTTONCLOSE_TEMPLATE = cv2.imread(TEMPLATES_DIR + 'Button_close.png',0) # Template of button with text 'Close'
 
 AT_TEMPLATES = [
     # template, type, [maxSoldiers, maxVehicles, maxMorale]
@@ -73,31 +78,13 @@ AT_TEMPLATES = [
     #[cv2.imread(TEMPLATES_DIR + 'Assault_Teams/fighter_recon.png', 0), 'Fighter_Recon', [20, 16, 100]]
 ]
 
-MAJOR_CITIES_TEMPLATES = []
-directory = TEMPLATES_DIR + 'Major_Cities/'
-files = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
-for file in files:
-    filepath = directory + file
-    cv2_template = cv2.imread(filepath, 0)
-    MAJOR_CITIES_TEMPLATES.append((cv2_template, file[:-4]))
-
 # used as flag to detect if the program was run the first time and altitude calibration has not been made
 CURRENT_ALTITUDE = -1
-
-# how many unsuccessful actions are needed before we recalibrate altitude
+# counter of attempts failed to find circles on the screen
 FAILED_ATTEMPTS = 0
-FAILED_ATTEMPTS_LIM = 3
 
 # array used to store assault teams and reinforcements
 TEAMS = []
-
-########################################################################################################################
-
-def die():
-    print 'Make sure you\'re running H&G in 1920x1080 window, your tab is set to GLOBAL & your color scheme is RED-BLUE.'
-    print 'A screenshot was made to capture the moment of this exit.'
-    make_screenshot(DEBUG_DIR)
-    exit()
 
 ########################################################################################################################
 
@@ -106,10 +93,10 @@ def get_rnd_mouse_speed():
 
 ########################################################################################################################
 
-def get_unique_screenshot_name():
-    name = str(int(time.time()))
-    rnd = random.randint(100, 999)
-    return name + '_' + str(rnd) + '.png'
+def get_screenshot_name():
+    name = '%s' % get_loc_time()
+    #rnd = random.randint(100, 999)
+    return name + '.png'
 
 ########################################################################################################################
 
@@ -121,9 +108,14 @@ def make_screenshot(saveDirectory=None):
     """
     screenshot = pyautogui.screenshot()
     if saveDirectory is not None:
-        screenshot_name = saveDirectory + get_unique_screenshot_name()
+        screenshot_name = saveDirectory + get_screenshot_name()
         screenshot.save(screenshot_name)
     return screenshot
+
+def add_timestamp(cv2_image):
+    cv2.putText(cv2_image, get_loc_time(), (30, SCREEN_RESOLUTION[1] - 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    return cv2_image
+
 
 ########################################################################################################################
 
@@ -240,6 +232,20 @@ def distance(pos1, pos2):
 
 ########################################################################################################################
 
+def exclude_interface(cv2_gray):
+    # Excluding interface from the picture by coloring specific areas of the screen into black
+    # Excluding major towns and some of the interface on top
+    upper_left = (0, 0)
+    bottom_right = (SCREEN_RESOLUTION[0], 180)
+    cv2.rectangle(cv2_gray, upper_left, bottom_right, 0, -1)
+    # Excluding AT panel
+    upper_left = (1542, 149)
+    bottom_right = (SCREEN_RESOLUTION[0], 150 + TEAMS.__len__() * 100)
+    cv2.rectangle(cv2_gray, upper_left, bottom_right, 0, -1)
+    return cv2_gray
+
+########################################################################################################################
+
 def find_battles_on_screen(debug=False):
     """
     Makes two screenshots with 1.5s interval, merges their masks to compensate glowing and then returns the array of
@@ -274,15 +280,8 @@ def find_battles_on_screen(debug=False):
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     # mask = cv2.medianBlur(mask, 7)
 
-    # Excluding interface from the picture by coloring specific areas of the screen into black
-    # Excluding major towns and some of the interface on top
-    upper_left = (0, 0)
-    bottom_right = (SCREEN_RESOLUTION[0], 180)
-    cv2.rectangle(mask, upper_left, bottom_right, 0, -1)
-    # Excluding AT panel
-    upper_left = (1542, 149)
-    bottom_right = (SCREEN_RESOLUTION[0], 150 + TEAMS.__len__() * 100)
-    cv2.rectangle(mask, upper_left, bottom_right, 0, -1)
+    # Excluding interface to get rid of false positives on it
+    mask = exclude_interface(mask)
 
     # Finding circles aka battles
     circles = cv2.HoughCircles(mask, cv2.HOUGH_GRADIENT, 1, 14, param1=20, param2=9, minRadius=7, maxRadius=11)
@@ -294,7 +293,7 @@ def find_battles_on_screen(debug=False):
                 cv2.circle(cv2_image, (i[0], i[1]), i[2], (0, 255, 0), 2)
                 cv2.circle(cv2_image, (i[0], i[1]), 2, (0, 0, 255), 3)
             cv2.circle(cv2_image, SCREEN_CENTER, 2, (255, 150, 150), 2)
-            cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_image)
+            cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_image)
 
     return circles
 
@@ -346,7 +345,7 @@ def is_panel_opened(PIL_image=None, debug=False):
         bottom_right = (top_left[0] + w, top_left[1] + h)
         cv2.rectangle(cv2_gray, top_left, bottom_right, 255, 2)
         cv2.putText(cv2_gray, '%s' % max_val, max_loc, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 255, 1)
-        cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_gray)
+        cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_gray)
 
     # if the icon in the left half of the cropped image, the panel is opened
     w, h = cv2_gray.shape[::-1]
@@ -380,7 +379,7 @@ def toggle_panel(action, PIL_image=None, debug=False):
 
 ########################################################################################################################
 
-def template_on_image(cv2_gray, template, threshold, debug=False):
+def template_on_image(cv2_gray, template, threshold, getPos=False, debug=False):
     """
     Checks whether given template is found on the given image.
     :param cv2_gray: gray image to search on
@@ -396,12 +395,43 @@ def template_on_image(cv2_gray, template, threshold, debug=False):
     if debug:
         cv2.rectangle(cv2_gray, max_loc, (max_loc[0] + w, max_loc[1] + h), 255, 2)
         cv2.putText(cv2_gray, '%s' % max_val, max_loc, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 255, 1)
-        cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_gray)
+        cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_gray)
+
+    centerAt = (max_loc[0] + w / 2, max_loc[1] + h / 2)
+
+    # If getPos==True, also return center of the best found match
+    if getPos:
+        if max_val > threshold:
+            return True, centerAt
+        else:
+            return False, centerAt
 
     if max_val > threshold:
         return True
     else:
         return False
+
+########################################################################################################################
+
+def click_if_found(template, cv2_gray=None, threshold=0.85, debug=False):
+
+    # It is important that cursor doesnt interfere with the image we find
+    pyautogui.moveTo(SCREEN_CENTER, duration=get_rnd_mouse_speed())
+
+    if cv2_gray is None:
+        cv2_gray = convert_PILToCV2(make_screenshot(), cv2.COLOR_RGB2GRAY)
+
+    templateFound, templateCenter = template_on_image(cv2_gray, template, threshold, getPos=True)
+
+    if templateFound:
+        # Debug snippet
+        if debug:
+            cv2.circle(cv2_gray, templateCenter, 15, 255, 2)
+            cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_gray)
+        # Debug snipped end
+        pyautogui.click(templateCenter, duration=get_rnd_mouse_speed())
+
+    return templateFound
 
 ########################################################################################################################
 
@@ -507,7 +537,7 @@ def get_teams(PIL_image, debug=False):
                 cv2.putText(cv2_gray, '%s' % type, (pt[0], pt[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, 255, 1)
 
     if debug:
-        cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_gray)
+        cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_gray)
 
     return teams
 
@@ -537,27 +567,9 @@ def get_city_pos(city):
 
 ########################################################################################################################
 
-def get_city_name(city):
-    x, y = get_city_pos(city)
-    pyautogui.moveTo(x, y, get_rnd_mouse_speed())
-    time.sleep(INTERFACE_SLEEP)
-    x, y = FIRST_STAR
-    screencap = make_screenshot()
-    cv2_gray = convert_PILToCV2(screencap, cv2.COLOR_RGB2GRAY)
-    cv2_gray = get_cropped(cv2_gray, box=((x, y), (x + STAR_STEP * 5, y + STAR_STEP * 3)))
-    for mct in MAJOR_CITIES_TEMPLATES:
-        t, name = mct
-        if template_on_image(cv2_gray, t, 0.9):
-            return name
-    return 'Unknown'
-
-########################################################################################################################
-
 def move_team_to(team, pos):
     x, y = team.getPos()
     pyautogui.moveTo(x, y, get_rnd_mouse_speed())
-    # pyautogui.dragTo(pos, 1)
-
     pyautogui.mouseDown(team.getPos())
     pyautogui.moveTo(pos[0], pos[1], 2)
     pyautogui.mouseUp(pos)
@@ -589,8 +601,8 @@ def move_screen_to_team(team):
 
 def get_position_sitrep(debug=False):
 
-    # This function was calibrated for altitude level 4
-    move_to_altitude(4)
+    # HoughCircles was calibrated for level 7
+    move_to_altitude(7)
 
     screencap = make_screenshot()
     cv2_image = convert_PILToCV2(screencap)
@@ -601,16 +613,18 @@ def get_position_sitrep(debug=False):
     # 1. Getting mask with RED towns
     cv2_mask_red = get_mask(RED_BGR, cv2_image, range=50)
     cv2_mask_rg = cv2.add(cv2_mask_red, cv2_mask_gray)
+    cv2_mask_rg = exclude_interface(cv2_mask_rg)
 
     # 2. Finding RED towns
     cv2_mask_rg = cv2.medianBlur(cv2_mask_rg, 7)
-    red_towns = cv2.HoughCircles(cv2_mask_rg, cv2.HOUGH_GRADIENT, 1, 20, param1=20, param2=9, minRadius=11, maxRadius=15)
+    red_towns = cv2.HoughCircles(cv2_mask_rg, cv2.HOUGH_GRADIENT, 1, 10, param1=20, param2=9, minRadius=4, maxRadius=7)
     if red_towns is not None:
         red_towns = np.uint16(np.around(red_towns))
 
     # 3. Getting mask with BLUE towns
     cv2_mask_blue = get_mask(BLUE_BGR, cv2_image, range=80)
     cv2_mask_bg = cv2.add(cv2_mask_blue, cv2_mask_gray)
+    cv2_mask_bg = exclude_interface(cv2_mask_bg)
 
     # 3. Drawing black circles with centers in RED towns over blue mask
     if red_towns is not None:
@@ -620,7 +634,7 @@ def get_position_sitrep(debug=False):
 
     # 4. Finding remaining BLUE towns
     cv2_mask = cv2.medianBlur(cv2_mask_bg, 7)
-    blue_towns = cv2.HoughCircles(cv2_mask, cv2.HOUGH_GRADIENT, 1, 20, param1=20, param2=9, minRadius=11, maxRadius=15)
+    blue_towns = cv2.HoughCircles(cv2_mask, cv2.HOUGH_GRADIENT, 1, 10, param1=20, param2=9, minRadius=4, maxRadius=7)
     if blue_towns is not None:
         blue_towns = np.uint16(np.around(blue_towns))
 
@@ -650,23 +664,21 @@ def get_position_sitrep(debug=False):
             for i in blue_towns[0, :]:
                 cv2.circle(cv2_image, (i[0], i[1]), i[2], (0, 255, 0), 2)
                 cv2.circle(cv2_image, (i[0], i[1]), 2, (0, 0, 255), 3)
-        cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_image)
-        #cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2.add(cv2_mask_rg, cv2_mask_bg))
+        cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_image)
+        #cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2.add(cv2_mask_rg, cv2_mask_bg))
 
     return isInSafeTown, closestBlueTown
 
 ########################################################################################################################
 
 def get_loc_time():
-    return time.strftime('%c', time.localtime(int(time.time())))
+    return time.strftime('%y-%m-%d %H-%M-%S', time.localtime(int(time.time())))
 
 ########################################################################################################################
 
 def simulate_activity(debug=False):
 
-    # activity2 will remain unused for now, as I suspect it could be tracked way too easily
-    # clicking on towns every minute or so may appear inconsistent with average GLOBAL map usage
-    activities = (activity2, activity2)
+    activities = (activity1, activity1)
     func = random.choice(activities)
     func(debug)
 
@@ -696,8 +708,7 @@ def activity2(debug=False):
         die()
     random_city = random.choice(xrange(count))
     if debug:
-        cityName = get_city_name(random_city)
-        print '%s Moving camera to %s (ID %d)' % (get_loc_time(), cityName, random_city)
+        print '%s Moving camera to City %d' % (get_loc_time(), random_city)
     move_screen_to_city(random_city)
 
 
@@ -721,7 +732,7 @@ def get_towns_to_deploy(PIL_image=None, debug=False):
             for i in circles[0, :]:
                 cv2.circle(cv2_image, (i[0], i[1]), i[2], (0, 255, 0), 2)
                 cv2.circle(cv2_image, (i[0], i[1]), 2, (0, 0, 255), 3)
-            cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_image)
+            cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_image)
 
     return circles
 
@@ -781,22 +792,12 @@ def has_reinforcements_rolling(team):
 
 ########################################################################################################################
 
-def reset_altitude():
-    global CURRENT_ALTITUDE
-    global FAILED_ATTEMPTS
-    print '%s Resetting altitude.' % get_loc_time()
-    CURRENT_ALTITUDE = -1
-    FAILED_ATTEMPTS = 0
-
-########################################################################################################################
-
 def manage_team(team, debug=False):
     """
     Makes a decision what to do with given assault team: deploy, send to attack, send to retreat, nothing
     :param team:
     :return: nothing
     """
-
     global FAILED_ATTEMPTS
 
     # First we need to confirm if the AT is still on it's place in the panel
@@ -819,7 +820,7 @@ def manage_team(team, debug=False):
         print '%s %s\'s icon was shifted by reinforcement team(s), waiting for another cycle.' % (
         get_loc_time(), team.getType())
         if debug:
-            cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_gray)
+            cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_gray)
         return
 
     # By this point, what we see on the screencap matches what the team icon should look like
@@ -829,8 +830,8 @@ def manage_team(team, debug=False):
         if mainTeam is None:
             print '%s couldn\'t find a team that is being reinforced, can\'t correct %s\'s way.' % (get_loc_time(), team.getType())
         else:
-            # On a lower altitude the accuracy of sending troops is better, so we go with level 4 here
-            move_to_altitude(4)
+            # On a lower altitude the accuracy of sending troops is better
+            # move_to_altitude(7)
             move_screen_to_team(mainTeam)
             move_team_to(team, SCREEN_CENTER)
 
@@ -840,7 +841,7 @@ def manage_team(team, debug=False):
                 cv2_image = convert_PILToCV2(screencap)
                 cv2.arrowedLine(cv2_image, team.getPos(), SCREEN_CENTER, (0, 255, 0), 2)
                 cv2.putText(cv2_image, 'Correcting %s' % team.getType(), SCREEN_CENTER, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_image)
+                cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_image)
             # Debug snipped end
 
             print '%s Trying to correct %s on it\'s way to %s' % (get_loc_time(), team.getType(), mainTeam.getType())
@@ -899,7 +900,7 @@ def manage_team(team, debug=False):
     # Check if it needs rest\reinforcements
     if team.needsRest() | team.needsReinforcements():
 
-        isInSafeTown, safeTown = get_position_sitrep(debug=True)
+        isInSafeTown, safeTown = get_position_sitrep(debug=False)
         if safeTown is not None:
             safeTownDistance, safeTownPos = safeTown
 
@@ -914,7 +915,8 @@ def manage_team(team, debug=False):
                     time.sleep(INTERFACE_SLEEP)
                     pyautogui.click(BUY_BUTTON_POS, duration=get_rnd_mouse_speed())
                 else:
-                    print '%s %s is fully reinforced and resting in safe place.' % (get_loc_time(), team.getType())
+                    # print '%s %s is fully reinforced and resting in safe place.' % (get_loc_time(), team.getType())
+
                     return
             else:
                 # If rest is not needed, but team is in need of reinforcements
@@ -931,13 +933,8 @@ def manage_team(team, debug=False):
             # Send team away from the frontline
             if safeTown is None:
                 print '%s Can\'t send %s away from the frontline. No safe towns around.' % (get_loc_time(), team.getType())
-
-                # Part of the self correction snippet
-                FAILED_ATTEMPTS += 1
-                if FAILED_ATTEMPTS > FAILED_ATTEMPTS_LIM:
-                    reset_altitude()
-
                 # TODO this is a potential loop here. Assault team will stand still until the town is found.
+
             else:
                 print '%s Sending %s away from the frontline.' % (get_loc_time(), team.getType())
 
@@ -947,7 +944,7 @@ def manage_team(team, debug=False):
                     cv2_image = convert_PILToCV2(screencap)
                     cv2.arrowedLine(cv2_image, SCREEN_CENTER, safeTownPos, (0, 255, 0), 2)
                     cv2.putText(cv2_image, '%s retreats' % team.getType(), SCREEN_CENTER, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                    cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_image)
+                    cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_image)
                 # Debug snipped end
 
                 move_team_to(team, safeTownPos)
@@ -972,21 +969,18 @@ def manage_team(team, debug=False):
             if count == 0:
                 print 'Failed to find major cities on the screen.'
                 die()
-            print 'At this moment our faction controls %d major cities...' % count
 
-            move_to_altitude(7)
             frontLineCity = find_frontline_city(count)
 
             # Normally we get None only if the altitude got broken
             if frontLineCity is None:
                 print 'Can\'t find frontline city.'
-                reset_altitude()
+                FAILED_ATTEMPTS += 1
                 return
 
             cityID, battlePos, distanceToBattle = frontLineCity
-            cityName = get_city_name(cityID)
 
-            print 'The closest battle is next to %s, sending %s there.' % (cityName, team.getType())
+            print 'The closest battle is next to City %d, sending %s there.' % (cityID, team.getType())
             move_screen_to_city(cityID)
 
             # Debug snippet
@@ -994,8 +988,8 @@ def manage_team(team, debug=False):
                 screencap = make_screenshot()
                 cv2_image = convert_PILToCV2(screencap)
                 cv2.arrowedLine(cv2_image, team.getPos(), SCREEN_CENTER, (0, 255, 0), 2)
-                cv2.putText(cv2_image, 'Sending %s to %s' % (team.getType(), cityName), SCREEN_CENTER, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_image)
+                cv2.putText(cv2_image, 'Sending %s to City %d' % (team.getType(), cityID), SCREEN_CENTER, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_image)
             # Debug snipped end
 
             move_team_to(team, SCREEN_CENTER)
@@ -1009,53 +1003,79 @@ def manage_team(team, debug=False):
             cv2_image = convert_PILToCV2(screencap)
             cv2.arrowedLine(cv2_image, SCREEN_CENTER, battlePos, (0, 255, 0), 2)
             cv2.putText(cv2_image, '%s attacks' % team.getType(), SCREEN_CENTER, cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
-            cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_image)
+            cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_image)
             # Debug snipped end
 
             move_team_to(team, battlePos)
-
-            # Check if we sent a team that can not be sent, and accidentally clicked on battle
-            time.sleep(INTERFACE_SLEEP)
-            screencap = make_screenshot()
-            col1 = screencap.getpixel(CLOSE_POS)
-
-            time.sleep(INTERFACE_SLEEP)
-            screencap = make_screenshot()
-            col2 = screencap.getpixel(CLOSE_POS)
-
-            # If colors don't match, then there is an overlapping window appeared, and we need to close it
-            ClickedOnBattle = not any(map(eq, col1, col2))
-            if ClickedOnBattle:
-                print '%s Accidentally clicked on town, closing the window now.' % get_loc_time()
-
-                # Debug snipped
-                if debug:
-                    cv2_image = convert_PILToCV2(screencap)
-                    cv2.circle(cv2_image, CLOSE_POS, 15, (0, 255, 0), 2)
-                    cv2.imwrite(DEBUG_DIR + get_unique_screenshot_name(), cv2_image)
-                # Debug snipped end
-
-                pyautogui.click(CLOSE_POS, duration=get_rnd_mouse_speed())
 
     return
 
 ########################################################################################################################
 
+def reset_altitude():
+    global CURRENT_ALTITUDE
+    global FAILED_ATTEMPTS
+    CURRENT_ALTITUDE = -1
+    FAILED_ATTEMPTS = 0
+
+def kill_game():
+
+def revive_game():
+    status = call(STEAM_DIR + STEAM_GAME_ID, shell=False)
+
+def die():
+    print '%s Diana has stopped working.' % get_loc_time()
+    print 'Make sure you\'re running H&G in 1920x1080 window, your tab is set to GLOBAL & your color scheme is RED-BLUE.'
+    print 'A screenshot was made to capture the moment of this exit.'
+    cv2_image = convert_PILToCV2(make_screenshot())
+    cv2_image = add_timestamp(cv2_image)
+    cv2.imwrite(DEBUG_DIR + get_screenshot_name(), cv2_image)
+    reboot()
+
+def reboot():
+    print 'Initiating reboot...'
+    print 'Killing the process...'
+    kill_game()
+    time.sleep(10)
+    print 'Launching the game...'
+    revive_game()
+    time.sleep(40)
+    print 'Going to fullscreen...'
+    pyautogui.hotkey('Win', 'up')
+    time.sleep(INTERFACE_SLEEP)
+
+    # Closing advertisement windows
+    templateFound = True
+    while templateFound:
+        templateFound = click_if_found(REDCROSS_TEMPLATE, debug=True)
+        time.sleep(INTERFACE_SLEEP)
+
+    print 'Going to GENERALS tab...'
+    pyautogui.click(1070, 70, duration=get_rnd_mouse_speed())
+    time.sleep(20)
+
+    reset_altitude()
+    main()
+
+########################################################################################################################
+
+
 def main():
 
-    global FAILED_ATTEMPTS
     global CURRENT_ALTITUDE
     global TEAMS
 
     time.sleep(3)
 
     while True:
+        global FAILED_ATTEMPTS
+        if FAILED_ATTEMPTS > 3:
+            reset_altitude()
+
         # Open AT panel
         toggle_panel(action='open', debug=False)
 
-        screencap = make_screenshot()
-
-        TEAMS = get_teams(screencap, debug=False)
+        TEAMS = get_teams(make_screenshot(), debug=False)
         if TEAMS.__len__() == 0:
             print 'No assault teams found, nothing to deploy.'
             die()
@@ -1063,6 +1083,14 @@ def main():
         # Managing ATs
         for team in TEAMS:
             manage_team(team, debug=True)
+
+            # Check if we accidentally clicked on town
+            time.sleep(INTERFACE_SLEEP)
+            cv2_gray = convert_PILToCV2(make_screenshot(), cv2.COLOR_RGB2GRAY)
+            # Only one of these may be present
+            click_if_found(REDCROSS_TEMPLATE, cv2_gray, debug=True)
+            click_if_found(BUTTONCLOSE_TEMPLATE, cv2_gray, debug=True)
+            time.sleep(INTERFACE_SLEEP)
 
         time.sleep(10 + random.randrange(0, 15))
         simulate_activity(debug=False)
