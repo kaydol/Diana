@@ -54,6 +54,8 @@ DEBUG_DIR = 'D:/Diana/'
 # directory with templates
 TEMPLATES_DIR = 'data/templates/'
 
+STEAM_DIR = '###'
+STEAM_GAME_ID = '###'
 
 QUEUE_TEMPLATE = cv2.imread(TEMPLATES_DIR + 'Queue.png',0)
 DEPLOY_TEMPLATE = cv2.imread(TEMPLATES_DIR + 'Deploy.png',0)
@@ -1019,6 +1021,7 @@ def reset_altitude():
     FAILED_ATTEMPTS = 0
 
 def kill_game():
+    call(["taskkill", "/IM", "###"])
 
 def revive_game():
     status = call(STEAM_DIR + STEAM_GAME_ID, shell=False)
